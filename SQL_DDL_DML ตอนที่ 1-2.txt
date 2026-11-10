@@ -1,0 +1,632 @@
+============================================================
+ตอนที่ 1 · DDL — คำสั่งนิยามโครงสร้างข้อมูล
+============================================================
+ระดับ 1 · พื้นฐาน
+ข้อ 1.1 สร้างสคีมาชื่อ Training
+------------------------------------------------------------
+IF SCHEMA_ID(N'Training') IS NULL
+BEGIN
+    EXEC(N'CREATE SCHEMA Training');
+END;
+GO
+
+ข้อ 1.2 สร้างตาราง Training.SupplierType
+------------------------------------------------------------
+CREATE TABLE Training.SupplierType
+(
+    TypeID   int NOT NULL,
+    TypeName nvarchar(50) NOT NULL,
+    CONSTRAINT PK_SupplierType PRIMARY KEY (TypeID)
+);
+GO
+
+ข้อ 1.3 สร้างตาราง Training.LocalSupplier
+------------------------------------------------------------
+CREATE TABLE Training.LocalSupplier
+(
+    SupplierID   int NOT NULL,
+    CompanyName  nvarchar(40) NOT NULL,
+    ContactEmail nvarchar(120) NULL,
+    Country      nvarchar(15) NOT NULL,
+    CONSTRAINT PK_LocalSupplier PRIMARY KEY (SupplierID)
+);
+GO
+
+ข้อ 1.4 เพิ่มคอลัมน์ Phone
+------------------------------------------------------------
+ALTER TABLE Training.LocalSupplier
+ADD Phone nvarchar(24) NULL;
+GO
+
+ข้อ 1.5 ขยาย CompanyName เป็น nvarchar(80) และคง NOT NULL
+------------------------------------------------------------
+ALTER TABLE Training.LocalSupplier
+ALTER COLUMN CompanyName nvarchar(80) NOT NULL;
+GO
+
+ข้อ 1.6 ลบคอลัมน์ Phone
+------------------------------------------------------------
+ALTER TABLE Training.LocalSupplier
+DROP COLUMN Phone;
+GO
+
+ข้อ 1.7 เพิ่มข้อจำกัดไม่ให้ ContactEmail ซ้ำ
+------------------------------------------------------------
+ALTER TABLE Training.LocalSupplier
+ADD CONSTRAINT UQ_LocalSupplier_ContactEmail
+UNIQUE (ContactEmail);
+GO
+
+ข้อ 1.8 ลบตาราง SupplierType โดยไม่ผิดพลาดหากไม่มีตาราง
+------------------------------------------------------------
+IF OBJECT_ID(N'Training.SupplierType', N'U') IS NOT NULL
+BEGIN
+    DROP TABLE Training.SupplierType;
+END;
+GO
+
+
+ระดับ 2 · ประยุกต์
+
+ข้อ 1.9 เพิ่ม CreditRating พร้อม DEFAULT และ CHECK
+------------------------------------------------------------
+ALTER TABLE Training.LocalSupplier
+ADD CreditRating tinyint NOT NULL
+    CONSTRAINT DF_LocalSupplier_CreditRating DEFAULT (3);
+GO
+
+ALTER TABLE Training.LocalSupplier
+ADD CONSTRAINT CK_LocalSupplier_CreditRating
+CHECK (CreditRating BETWEEN 1 AND 5);
+GO
+
+ข้อ 1.10 สร้างตาราง Training.SupplierProduct
+------------------------------------------------------------
+CREATE TABLE Training.SupplierProduct
+(
+    SupplierID int NOT NULL,
+    ProductID  int NOT NULL,
+    UnitCost   money NOT NULL,
+
+    CONSTRAINT PK_SupplierProduct
+        PRIMARY KEY (SupplierID, ProductID),
+
+    CONSTRAINT FK_SupplierProduct_LocalSupplier
+        FOREIGN KEY (SupplierID)
+        REFERENCES Training.LocalSupplier (SupplierID),
+
+    CONSTRAINT FK_SupplierProduct_Products
+        FOREIGN KEY (ProductID)
+        REFERENCES dbo.Products (ProductID)
+);
+GO
+
+ข้อ 1.11 สร้าง Nonclustered Index และ INCLUDE UnitCost
+------------------------------------------------------------
+CREATE NONCLUSTERED INDEX IX_SupplierProduct_ProductID
+ON Training.SupplierProduct (ProductID)
+INCLUDE (UnitCost);
+GO
+
+ข้อ 1.12 สร้างมุมมอง Product Catalog เฉพาะสินค้าที่ยังไม่เลิกจำหน่าย
+------------------------------------------------------------
+CREATE VIEW Training.vw_ProductCatalog
+AS
+SELECT
+    p.ProductID,
+    p.ProductName,
+    c.CategoryName,
+    s.CompanyName AS SupplierCompanyName,
+    p.UnitPrice
+FROM dbo.Products AS p
+INNER JOIN dbo.Categories AS c
+    ON p.CategoryID = c.CategoryID
+INNER JOIN dbo.Suppliers AS s
+    ON p.SupplierID = s.SupplierID
+WHERE p.Discontinued = 0;
+GO
+
+
+ระดับ 3 · ท้าทาย
+
+ข้อ 1.13 สร้างตาราง Training.PurchaseLine ตามข้อกำหนด
+------------------------------------------------------------
+CREATE TABLE Training.PurchaseLine
+(
+    PurchaseLineID int IDENTITY(1,1) NOT NULL,
+    SupplierID     int NOT NULL,
+    ProductID      int NOT NULL,
+    Quantity       smallint NOT NULL,
+    UnitCost       money NOT NULL,
+    Discount       real NOT NULL
+        CONSTRAINT DF_PurchaseLine_Discount DEFAULT (0),
+
+    LineTotal AS
+    (
+        CONVERT(money, Quantity * UnitCost * (1.0 - Discount))
+    ) PERSISTED,
+
+    CONSTRAINT PK_PurchaseLine_PurchaseLineID
+        PRIMARY KEY (PurchaseLineID),
+
+    CONSTRAINT FK_PurchaseLine_SupplierID
+        FOREIGN KEY (SupplierID)
+        REFERENCES Training.LocalSupplier (SupplierID)
+        ON DELETE CASCADE,
+
+    CONSTRAINT FK_PurchaseLine_ProductID
+        FOREIGN KEY (ProductID)
+        REFERENCES dbo.Products (ProductID),
+
+    CONSTRAINT CK_PurchaseLine_Quantity
+        CHECK (Quantity > 0),
+
+    CONSTRAINT CK_PurchaseLine_UnitCost
+        CHECK (UnitCost >= 0),
+
+    CONSTRAINT CK_PurchaseLine_Discount
+        CHECK (Discount >= 0 AND Discount <= 1),
+
+    CONSTRAINT UQ_PurchaseLine_SupplierID_ProductID
+        UNIQUE (SupplierID, ProductID)
+);
+GO
+
+คำอธิบาย:
+- IDENTITY ทำให้ PurchaseLineID เพิ่มค่าอัตโนมัติ
+- ON DELETE CASCADE ที่ SupplierID ทำให้เมื่อลบผู้ขาย รายการซื้อของผู้ขายนั้นถูกลบตาม
+- Foreign key ของ ProductID ไม่กำหนด CASCADE จึงใช้พฤติกรรม NO ACTION ตามค่าเริ่มต้น ป้องกันการลบสินค้าที่ยังถูกอ้างอิง
+- LineTotal เป็น computed column แบบ PERSISTED จึงเก็บค่าที่คำนวณไว้จริง
+- UNIQUE (SupplierID, ProductID) ป้องกันสินค้าซ้ำภายในผู้ขายรายเดียวกัน
+
+ข้อ 1.14 สคริปต์ติดตั้งที่รันซ้ำได้ และสคริปต์ถอนการติดตั้ง
+------------------------------------------------------------
+สคริปต์ติดตั้ง (Installation Script)
+
+IF SCHEMA_ID(N'Training') IS NULL
+BEGIN
+    EXEC(N'CREATE SCHEMA Training');
+END;
+GO
+
+IF OBJECT_ID(N'Training.SupplierType', N'U') IS NULL
+BEGIN
+    CREATE TABLE Training.SupplierType
+    (
+        TypeID int NOT NULL,
+        TypeName nvarchar(50) NOT NULL,
+        CONSTRAINT PK_SupplierType PRIMARY KEY (TypeID)
+    );
+END;
+GO
+
+IF OBJECT_ID(N'Training.LocalSupplier', N'U') IS NULL
+BEGIN
+    CREATE TABLE Training.LocalSupplier
+    (
+        SupplierID int NOT NULL,
+        CompanyName nvarchar(80) NOT NULL,
+        ContactEmail nvarchar(120) NULL,
+        Country nvarchar(15) NOT NULL,
+        CreditRating tinyint NOT NULL
+            CONSTRAINT DF_LocalSupplier_CreditRating DEFAULT (3),
+
+        CONSTRAINT PK_LocalSupplier PRIMARY KEY (SupplierID),
+        CONSTRAINT UQ_LocalSupplier_ContactEmail UNIQUE (ContactEmail),
+        CONSTRAINT CK_LocalSupplier_CreditRating
+            CHECK (CreditRating BETWEEN 1 AND 5)
+    );
+END;
+GO
+
+IF OBJECT_ID(N'Training.SupplierProduct', N'U') IS NULL
+BEGIN
+    CREATE TABLE Training.SupplierProduct
+    (
+        SupplierID int NOT NULL,
+        ProductID int NOT NULL,
+        UnitCost money NOT NULL,
+
+        CONSTRAINT PK_SupplierProduct
+            PRIMARY KEY (SupplierID, ProductID),
+
+        CONSTRAINT FK_SupplierProduct_LocalSupplier
+            FOREIGN KEY (SupplierID)
+            REFERENCES Training.LocalSupplier (SupplierID),
+
+        CONSTRAINT FK_SupplierProduct_Products
+            FOREIGN KEY (ProductID)
+            REFERENCES dbo.Products (ProductID)
+    );
+END;
+GO
+
+IF NOT EXISTS
+(
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = N'IX_SupplierProduct_ProductID'
+      AND object_id = OBJECT_ID(N'Training.SupplierProduct')
+)
+BEGIN
+    CREATE NONCLUSTERED INDEX IX_SupplierProduct_ProductID
+    ON Training.SupplierProduct (ProductID)
+    INCLUDE (UnitCost);
+END;
+GO
+
+IF OBJECT_ID(N'Training.PurchaseLine', N'U') IS NULL
+BEGIN
+    CREATE TABLE Training.PurchaseLine
+    (
+        PurchaseLineID int IDENTITY(1,1) NOT NULL,
+        SupplierID int NOT NULL,
+        ProductID int NOT NULL,
+        Quantity smallint NOT NULL,
+        UnitCost money NOT NULL,
+        Discount real NOT NULL
+            CONSTRAINT DF_PurchaseLine_Discount DEFAULT (0),
+
+        LineTotal AS
+        (
+            CONVERT(money, Quantity * UnitCost * (1.0 - Discount))
+        ) PERSISTED,
+
+        CONSTRAINT PK_PurchaseLine_PurchaseLineID
+            PRIMARY KEY (PurchaseLineID),
+
+        CONSTRAINT FK_PurchaseLine_SupplierID
+            FOREIGN KEY (SupplierID)
+            REFERENCES Training.LocalSupplier (SupplierID)
+            ON DELETE CASCADE,
+
+        CONSTRAINT FK_PurchaseLine_ProductID
+            FOREIGN KEY (ProductID)
+            REFERENCES dbo.Products (ProductID),
+
+        CONSTRAINT CK_PurchaseLine_Quantity CHECK (Quantity > 0),
+        CONSTRAINT CK_PurchaseLine_UnitCost CHECK (UnitCost >= 0),
+        CONSTRAINT CK_PurchaseLine_Discount
+            CHECK (Discount >= 0 AND Discount <= 1),
+
+        CONSTRAINT UQ_PurchaseLine_SupplierID_ProductID
+            UNIQUE (SupplierID, ProductID)
+    );
+END;
+GO
+
+
+สคริปต์ถอนการติดตั้ง (Uninstallation Script)
+
+-- ลบมุมมองก่อน หากมีการสร้างไว้
+IF OBJECT_ID(N'Training.vw_SupplierSpend', N'V') IS NOT NULL
+    DROP VIEW Training.vw_SupplierSpend;
+GO
+
+IF OBJECT_ID(N'Training.vw_ProductCatalog', N'V') IS NOT NULL
+    DROP VIEW Training.vw_ProductCatalog;
+GO
+
+-- ลบตารางลูกก่อนตารางแม่ เพื่อไม่ให้ติด Foreign Key
+IF OBJECT_ID(N'Training.PurchaseLine', N'U') IS NOT NULL
+    DROP TABLE Training.PurchaseLine;
+GO
+
+IF OBJECT_ID(N'Training.SupplierProduct', N'U') IS NOT NULL
+    DROP TABLE Training.SupplierProduct;
+GO
+
+IF OBJECT_ID(N'Training.LocalSupplier', N'U') IS NOT NULL
+    DROP TABLE Training.LocalSupplier;
+GO
+
+IF OBJECT_ID(N'Training.SupplierType', N'U') IS NOT NULL
+    DROP TABLE Training.SupplierType;
+GO
+
+-- ลบสคีมาเมื่อไม่มีวัตถุเหลืออยู่แล้ว
+IF SCHEMA_ID(N'Training') IS NOT NULL
+BEGIN
+    DROP SCHEMA Training;
+END;
+GO
+
+คำอธิบาย:
+สคริปต์ติดตั้งสร้างสคีมาและตารางแม่ก่อนตารางลูก เพราะตารางลูกต้องอ้างอิงตารางแม่ผ่าน Foreign Key ส่วนสคริปต์ถอนการติดตั้งต้องลบตารางลูกก่อนตารางแม่ เพื่อไม่ให้ Foreign Key ขัดขวางการลบตารางที่ถูกอ้างอิง
+
+
+ข้อ 1.15 สร้างมุมมองสรุปยอดซื้อและจำนวนรายการ พร้อม Clustered Index
+------------------------------------------------------------
+-- ตั้งค่า SET options ที่จำเป็นสำหรับ Indexed View
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_PADDING ON;
+SET ANSI_WARNINGS ON;
+SET CONCAT_NULL_YIELDS_NULL ON;
+SET ARITHABORT ON;
+SET NUMERIC_ROUNDABORT OFF;
+GO
+
+CREATE VIEW Training.vw_SupplierSpend
+WITH SCHEMABINDING
+AS
+SELECT
+    pl.SupplierID,
+    COUNT_BIG(*) AS PurchaseLineCount,
+    SUM(pl.LineTotal) AS TotalSpend
+FROM Training.PurchaseLine AS pl
+GROUP BY pl.SupplierID;
+GO
+
+CREATE UNIQUE CLUSTERED INDEX IX_vw_SupplierSpend
+ON Training.vw_SupplierSpend (SupplierID);
+GO
+
+============================================================
+ตอนที่ 2 · DML — INSERT, UPDATE และ DELETE
+============================================================
+
+ระดับ 1 · พื้นฐาน
+
+ข้อ 2.1 เพิ่มผู้ขาย SupplierID = 1 โดยไม่ระบุ CreditRating
+------------------------------------------------------------
+INSERT INTO Training.LocalSupplier
+    (SupplierID, CompanyName, ContactEmail, Country)
+VALUES
+    (1, N'Siam Food Traders', N'contact@siamfood.co.th', N'Thailand');
+GO
+
+หมายเหตุ: CreditRating จะใช้ค่า DEFAULT คือ 3
+
+ข้อ 2.2 เพิ่มผู้ขาย 3 รายใน INSERT คำสั่งเดียว
+------------------------------------------------------------
+INSERT INTO Training.LocalSupplier
+    (SupplierID, CompanyName, ContactEmail, Country, CreditRating)
+VALUES
+    (2, N'Bangkok Spice Co.', N'sales@bkkspice.co.th', N'Thailand', 4),
+    (3, N'Japan Fresh Foods', N'info@japanfresh.jp', N'Japan', 5),
+    (4, N'Venture Foods Ltd.', N'hello@venturefoods.co.uk', N'UK', 2);
+GO
+
+ข้อ 2.3 เพิ่มสินค้า ProductID = 1 ให้ผู้ขาย SupplierID = 1
+------------------------------------------------------------
+INSERT INTO Training.SupplierProduct
+    (SupplierID, ProductID, UnitCost)
+VALUES
+    (1, 1, 15.00);
+GO
+
+ข้อ 2.4 เปลี่ยน CreditRating ของผู้ขาย SupplierID = 1 เป็น 5
+------------------------------------------------------------
+-- ตรวจสอบข้อมูลก่อน UPDATE
+SELECT *
+FROM Training.LocalSupplier
+WHERE SupplierID = 1;
+GO
+
+UPDATE Training.LocalSupplier
+SET CreditRating = 5
+WHERE SupplierID = 1;
+GO
+
+ข้อ 2.5 แก้อีเมลและ CreditRating ของผู้ขาย SupplierID = 2
+------------------------------------------------------------
+-- ตรวจสอบข้อมูลก่อน UPDATE
+SELECT *
+FROM Training.LocalSupplier
+WHERE SupplierID = 2;
+GO
+
+UPDATE Training.LocalSupplier
+SET ContactEmail = N'newmail@bkkspice.co.th',
+    CreditRating = 4
+WHERE SupplierID = 2;
+GO
+
+ข้อ 2.6 เพิ่มราคาทุนของผู้ขาย SupplierID = 1 ขึ้น 5%
+------------------------------------------------------------
+-- ตรวจสอบราคาก่อน UPDATE
+SELECT *
+FROM Training.SupplierProduct
+WHERE SupplierID = 1;
+GO
+
+UPDATE Training.SupplierProduct
+SET UnitCost = UnitCost * 1.05
+WHERE SupplierID = 1;
+GO
+
+ข้อ 2.7 ลบผู้ขายที่มี CreditRating น้อยกว่า 3
+------------------------------------------------------------
+-- ตรวจสอบแถวที่จะถูกลบก่อน
+SELECT *
+FROM Training.LocalSupplier
+WHERE CreditRating < 3;
+GO
+
+DELETE FROM Training.LocalSupplier
+WHERE CreditRating < 3;
+GO
+
+หมายเหตุ: ผู้ขายที่ถูกลบจะทำให้แถวใน PurchaseLine ของผู้ขายนั้นถูกลบตาม เพราะกำหนด ON DELETE CASCADE ไว้
+
+ข้อ 2.8 ลบข้อมูลทุกแถวใน SupplierProduct ด้วย DELETE และ TRUNCATE
+------------------------------------------------------------
+-- ตรวจสอบจำนวนและข้อมูลก่อนลบ
+SELECT *
+FROM Training.SupplierProduct;
+GO
+
+-- วิธีที่ 1: DELETE
+DELETE FROM Training.SupplierProduct;
+GO
+
+-- วิธีที่ 2: TRUNCATE TABLE
+-- ใช้แทน DELETE ได้ แต่ไม่ควรรันต่อจาก DELETE หากไม่จำเป็น
+TRUNCATE TABLE Training.SupplierProduct;
+GO
+
+
+ระดับ 2 · ประยุกต์
+ข้อ 2.9 คัดลอกสินค้าที่ยังไม่เลิกจำหน่ายและราคามากกว่า 20
+------------------------------------------------------------
+-- ป้องกันการเพิ่มคู่ SupplierID/ProductID ที่มีอยู่แล้ว
+INSERT INTO Training.SupplierProduct
+    (SupplierID, ProductID, UnitCost)
+SELECT
+    1,
+    p.ProductID,
+    p.UnitPrice
+FROM dbo.Products AS p
+WHERE p.Discontinued = 0
+  AND p.UnitPrice > 20
+  AND NOT EXISTS
+  (
+      SELECT 1
+      FROM Training.SupplierProduct AS sp
+      WHERE sp.SupplierID = 1
+        AND sp.ProductID = p.ProductID
+  );
+GO
+
+ข้อ 2.10 ปรับ CreditRating เป็น 5 ให้ผู้ขายที่มีสินค้ามากกว่า 10 รายการ
+------------------------------------------------------------
+-- ตรวจสอบผู้ขายที่จะถูกแก้ไขก่อน
+SELECT
+    ls.SupplierID,
+    ls.CompanyName,
+    ls.CreditRating
+FROM Training.LocalSupplier AS ls
+WHERE ls.SupplierID IN
+(
+    SELECT sp.SupplierID
+    FROM Training.SupplierProduct AS sp
+    GROUP BY sp.SupplierID
+    HAVING COUNT(*) > 10
+);
+GO
+
+UPDATE Training.LocalSupplier
+SET CreditRating = 5
+WHERE SupplierID IN
+(
+    SELECT sp.SupplierID
+    FROM Training.SupplierProduct AS sp
+    GROUP BY sp.SupplierID
+    HAVING COUNT(*) > 10
+);
+GO
+
+ข้อ 2.11 ลบ SupplierProduct ที่อ้างถึงสินค้าที่เลิกจำหน่ายแล้ว
+------------------------------------------------------------
+-- ตรวจสอบแถวที่จะถูกลบก่อน
+SELECT sp.*
+FROM Training.SupplierProduct AS sp
+WHERE sp.ProductID IN
+(
+    SELECT p.ProductID
+    FROM dbo.Products AS p
+    WHERE p.Discontinued = 1
+);
+GO
+
+DELETE FROM Training.SupplierProduct
+WHERE ProductID IN
+(
+    SELECT p.ProductID
+    FROM dbo.Products AS p
+    WHERE p.Discontinued = 1
+);
+GO
+
+ข้อ 2.12 ใช้ Transaction ปรับ CreditRating ทุกคนเป็น 1 แล้ว Rollback
+------------------------------------------------------------
+BEGIN TRANSACTION;
+
+UPDATE Training.LocalSupplier
+SET CreditRating = 1;
+
+-- ตรวจสอบผลภายใน Transaction
+SELECT *
+FROM Training.LocalSupplier;
+
+-- ยกเลิกการเปลี่ยนแปลงทั้งหมด
+ROLLBACK TRANSACTION;
+GO
+
+คำอธิบาย:
+การใช้ Transaction ทำให้สามารถตรวจสอบผลการแก้ไขก่อนยืนยันได้ หากพบว่าผลไม่ถูกต้องสามารถ ROLLBACK เพื่อยกเลิกการเปลี่ยนแปลงทั้งหมดได้ ในข้อนี้ใช้ ROLLBACK จึงไม่มีการบันทึกค่า CreditRating = 1 ถาวร
+
+
+ระดับ 3 · ท้าทาย
+
+ข้อ 2.13 ปรับ UnitCost ให้เท่ากับ 90% ของ UnitPrice เฉพาะแถวที่ราคาปัจจุบันสูงกว่าค่าใหม่
+------------------------------------------------------------
+-- ตรวจสอบค่าปัจจุบันและค่าใหม่ก่อน UPDATE
+SELECT
+    sp.SupplierID,
+    sp.ProductID,
+    sp.UnitCost AS CurrentUnitCost,
+    p.UnitPrice * 0.90 AS NewUnitCost
+FROM Training.SupplierProduct AS sp
+INNER JOIN dbo.Products AS p
+    ON sp.ProductID = p.ProductID
+WHERE sp.UnitCost > p.UnitPrice * 0.90;
+GO
+
+UPDATE sp
+SET UnitCost = p.UnitPrice * 0.90
+FROM Training.SupplierProduct AS sp
+INNER JOIN dbo.Products AS p
+    ON sp.ProductID = p.ProductID
+WHERE sp.UnitCost > p.UnitPrice * 0.90;
+GO
+
+ข้อ 2.14 ลบ SupplierProduct ที่เป็นสินค้าหมวด Seafood โดย JOIN สามตาราง
+------------------------------------------------------------
+-- ตรวจสอบแถวที่จะถูกลบก่อน
+SELECT sp.*
+FROM Training.SupplierProduct AS sp
+INNER JOIN dbo.Products AS p
+    ON sp.ProductID = p.ProductID
+INNER JOIN dbo.Categories AS c
+    ON p.CategoryID = c.CategoryID
+WHERE c.CategoryName = N'Seafood';
+GO
+
+DELETE sp
+FROM Training.SupplierProduct AS sp
+INNER JOIN dbo.Products AS p
+    ON sp.ProductID = p.ProductID
+INNER JOIN dbo.Categories AS c
+    ON p.CategoryID = c.CategoryID
+WHERE c.CategoryName = N'Seafood';
+GO
+
+ข้อ 2.15 ใช้ MERGE ปรับ SupplierProduct ของ SupplierID = 1 ให้ตรงกับสินค้าที่ยังไม่เลิกจำหน่าย
+------------------------------------------------------------
+MERGE Training.SupplierProduct AS target
+USING
+(
+    SELECT
+        ProductID,
+        UnitPrice
+    FROM dbo.Products
+    WHERE Discontinued = 0
+) AS source
+ON target.SupplierID = 1
+AND target.ProductID = source.ProductID
+
+WHEN MATCHED THEN
+    UPDATE SET
+        target.UnitCost = source.UnitPrice
+
+WHEN NOT MATCHED BY TARGET THEN
+    INSERT (SupplierID, ProductID, UnitCost)
+    VALUES (1, source.ProductID, source.UnitPrice)
+
+WHEN NOT MATCHED BY SOURCE
+     AND target.SupplierID = 1 THEN
+    DELETE
+;
+GO

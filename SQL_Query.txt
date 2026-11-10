@@ -1,0 +1,536 @@
+==============================
+ตอนที่ 1 ระดับง่าย (ข้อ 1–15)
+==============================
+
+
+ข้อ 1 แสดงข้อมูลทุกคอลัมน์ของตาราง DEPARTMENT
+SELECT *
+FROM DEPARTMENT;
+
+
+ข้อ 2 แสดงรหัสนักศึกษา ชื่อ และนามสกุลของนักศึกษาทุกคน
+SELECT student_id, first_name, last_name
+FROM STUDENT;
+
+
+ข้อ 3 แสดงรายชื่ออาคารที่มีห้องเรียน โดยไม่ซ้ำกัน
+SELECT DISTINCT building
+FROM ROOM;
+
+
+ข้อ 4 แสดงรหัสวิชาและชื่อวิชาที่มี 3 หน่วยกิต
+SELECT course_id, course_name
+FROM COURSE
+WHERE credits = 3;
+
+
+ข้อ 5 แสดงรายชื่อนักศึกษาสาขา DS เรียงตามชื่อจาก ก–ฮ
+SELECT first_name, last_name
+FROM STUDENT
+WHERE dept_id = 'DS'
+ORDER BY first_name ASC;
+
+
+ข้อ 6 แสดงห้องเรียนทั้งหมดเรียงตามความจุจากมากไปน้อย
+SELECT *
+FROM ROOM
+ORDER BY capacity DESC;
+
+
+ข้อ 7 แสดงรหัสและชื่ออาจารย์ที่ยังไม่มีข้อมูลอีเมล
+SELECT instructor_id, inst_name
+FROM INSTRUCTOR
+WHERE email IS NULL;
+
+
+ข้อ 8 แสดงรหัสวิชาและชื่อวิชาที่รหัสวิชาขึ้นต้นด้วย CS
+SELECT course_id, course_name
+FROM COURSE
+WHERE course_id LIKE 'CS%';
+
+
+ข้อ 9 แสดงนักศึกษาที่อยู่สาขา IT หรือ BA โดยใช้ IN
+SELECT student_id, first_name, dept_id
+FROM STUDENT
+WHERE dept_id IN ('IT', 'BA');
+
+
+ข้อ 10 แสดงห้องเรียนที่มีความจุระหว่าง 30 ถึง 60 ที่นั่ง
+SELECT *
+FROM ROOM
+WHERE capacity BETWEEN 30 AND 60;
+
+
+ข้อ 11 แสดงชื่อและวันเกิดของนักศึกษาที่เกิดในปี 2005
+SELECT first_name, birth_date
+FROM STUDENT
+WHERE birth_date >= '2005-01-01'
+  AND birth_date < '2006-01-01';
+
+
+ข้อ 12 แสดงตอนเรียนของภาค 2568/1 ที่รับได้มากกว่า 50 ที่นั่ง
+SELECT *
+FROM SECTION
+WHERE semester = '2568/1'
+  AND seat_limit > 50;
+
+
+ข้อ 13 แสดงรายการลงทะเบียนที่ยังไม่มีเกรด
+SELECT student_id, section_id
+FROM ENROLLMENT
+WHERE grade IS NULL;
+
+
+ข้อ 14 แสดงชื่อวิชาและหน่วยกิต โดยตั้งชื่อคอลัมน์ใหม่เป็น วิชา และ หน่วยกิต
+SELECT course_name AS "วิชา",
+       credits AS "หน่วยกิต"
+FROM COURSE;
+
+
+ข้อ 15 แสดงห้องเรียน 3 ห้องที่มีความจุน้อยที่สุด
+SELECT *
+FROM ROOM
+ORDER BY capacity ASC
+LIMIT 3;
+
+
+==============================
+ตอนที่ 2 ระดับกลาง (ข้อ 16–35)
+==============================
+
+
+ข้อ 16 นับจำนวนนักศึกษาทั้งหมด
+SELECT COUNT(*) AS total_students
+FROM STUDENT;
+
+
+ข้อ 17 หาความจุสูงสุด ต่ำสุด และเฉลี่ยของห้องเรียน
+SELECT MAX(capacity) AS max_capacity,
+       MIN(capacity) AS min_capacity,
+       AVG(capacity) AS avg_capacity
+FROM ROOM;
+
+
+ข้อ 18 นับจำนวนนักศึกษาในแต่ละสาขา เรียงจากมากไปน้อย
+SELECT dept_id, COUNT(*) AS student_count
+FROM STUDENT
+GROUP BY dept_id
+ORDER BY student_count DESC;
+
+
+ข้อ 19 หาจำนวนตอนเรียนและจำนวนที่นั่งรวมในแต่ละภาคการศึกษา
+SELECT semester,
+       COUNT(*) AS section_count,
+       SUM(seat_limit) AS total_seats
+FROM SECTION
+GROUP BY semester
+ORDER BY semester;
+
+
+ข้อ 20 นับจำนวนรายการลงทะเบียนแยกตามเกรด ไม่นับรายการที่ยังไม่มีเกรด เรียงตามเกรด
+SELECT grade, COUNT(*) AS enrollment_count
+FROM ENROLLMENT
+WHERE grade IS NOT NULL
+GROUP BY grade
+ORDER BY grade;
+
+
+ข้อ 21 แสดงสาขาที่มีนักศึกษาตั้งแต่ 3 คนขึ้นไป
+SELECT dept_id, COUNT(*) AS student_count
+FROM STUDENT
+GROUP BY dept_id
+HAVING COUNT(*) >= 3;
+
+
+ข้อ 22 แสดงนักศึกษาที่ลงทะเบียนมากกว่า 2 ตอนเรียน
+SELECT student_id, COUNT(*) AS section_count
+FROM ENROLLMENT
+GROUP BY student_id
+HAVING COUNT(*) > 2;
+
+
+ข้อ 23 แสดงชื่อ นามสกุล และชื่อสาขาของนักศึกษา
+SELECT s.first_name, s.last_name, d.dept_name
+FROM STUDENT AS s
+INNER JOIN DEPARTMENT AS d
+    ON s.dept_id = d.dept_id;
+
+
+ข้อ 24 แสดงชื่ออาจารย์พร้อมชื่อสาขาและคณะ
+SELECT i.inst_name, d.dept_name, d.faculty
+FROM INSTRUCTOR AS i
+INNER JOIN DEPARTMENT AS d
+    ON i.dept_id = d.dept_id;
+
+
+ข้อ 25 แสดง section_id ชื่อวิชา และภาคการศึกษา ของตอนเรียนทั้งหมด
+SELECT sec.section_id, c.course_name, sec.semester
+FROM SECTION AS sec
+INNER JOIN COURSE AS c
+    ON sec.course_id = c.course_id;
+
+
+ข้อ 26 แสดงตอนเรียนภาค 2568/1 พร้อมชื่อวิชา ชื่ออาจารย์ และอาคาร
+SELECT sec.section_id,
+       c.course_name,
+       i.inst_name,
+       r.building
+FROM SECTION AS sec
+INNER JOIN COURSE AS c
+    ON sec.course_id = c.course_id
+INNER JOIN INSTRUCTOR AS i
+    ON sec.instructor_id = i.instructor_id
+LEFT JOIN ROOM AS r
+    ON sec.room_id = r.room_id
+WHERE sec.semester = '2568/1';
+
+
+ข้อ 27 แสดงรายวิชาที่นักศึกษาชื่อ กิตติ ลงทะเบียน พร้อมภาคการศึกษาและเกรด
+SELECT c.course_name, sec.semester, e.grade
+FROM STUDENT AS s
+INNER JOIN ENROLLMENT AS e
+    ON s.student_id = e.student_id
+INNER JOIN SECTION AS sec
+    ON e.section_id = sec.section_id
+INNER JOIN COURSE AS c
+    ON sec.course_id = c.course_id
+WHERE s.first_name = 'กิตติ';
+
+
+ข้อ 28 แสดงนักศึกษาทุกคนพร้อมจำนวนตอนเรียนที่ลงทะเบียน รวมคนที่ไม่ได้ลงทะเบียนด้วย
+SELECT s.student_id,
+       s.first_name,
+       s.last_name,
+       COUNT(e.section_id) AS section_count
+FROM STUDENT AS s
+LEFT JOIN ENROLLMENT AS e
+    ON s.student_id = e.student_id
+GROUP BY s.student_id, s.first_name, s.last_name;
+
+
+ข้อ 29 แสดงรายวิชาที่ยังไม่เคยเปิดตอนเรียนเลย
+SELECT c.course_id, c.course_name
+FROM COURSE AS c
+LEFT JOIN SECTION AS sec
+    ON c.course_id = sec.course_id
+WHERE sec.section_id IS NULL;
+
+
+ข้อ 30 แสดงอาจารย์ที่ไม่มีตอนเรียนที่รับผิดชอบเลย
+SELECT i.instructor_id, i.inst_name
+FROM INSTRUCTOR AS i
+LEFT JOIN SECTION AS sec
+    ON i.instructor_id = sec.instructor_id
+WHERE sec.section_id IS NULL;
+
+
+ข้อ 31 นับจำนวนนักศึกษาที่ลงทะเบียนในแต่ละตอนเรียน พร้อมชื่อวิชา เรียงตาม section_id
+SELECT sec.section_id,
+       c.course_name,
+       COUNT(e.student_id) AS student_count
+FROM SECTION AS sec
+INNER JOIN COURSE AS c
+    ON sec.course_id = c.course_id
+LEFT JOIN ENROLLMENT AS e
+    ON sec.section_id = e.section_id
+GROUP BY sec.section_id, c.course_name
+ORDER BY sec.section_id;
+
+
+ข้อ 32 หาจำนวนรายวิชาและหน่วยกิตรวมที่แต่ละสาขาเปิดสอน แสดงชื่อสาขา รวมสาขาที่ไม่มีวิชาด้วย
+SELECT d.dept_name,
+       COUNT(c.course_id) AS course_count,
+       COALESCE(SUM(c.credits), 0) AS total_credits
+FROM DEPARTMENT AS d
+LEFT JOIN COURSE AS c
+    ON d.dept_id = c.dept_id
+GROUP BY d.dept_id, d.dept_name
+ORDER BY d.dept_id;
+
+
+ข้อ 33 แสดงอาจารย์ที่สอนมากกว่า 1 ตอนเรียน พร้อมจำนวนตอนเรียน
+SELECT i.instructor_id,
+       i.inst_name,
+       COUNT(sec.section_id) AS section_count
+FROM INSTRUCTOR AS i
+INNER JOIN SECTION AS sec
+    ON i.instructor_id = sec.instructor_id
+GROUP BY i.instructor_id, i.inst_name
+HAVING COUNT(sec.section_id) > 1;
+
+
+ข้อ 34 แสดงตอนเรียนที่ seat_limit มากกว่าความจุของห้อง
+SELECT sec.section_id,
+       sec.course_id,
+       sec.room_id,
+       sec.seat_limit,
+       r.capacity
+FROM SECTION AS sec
+INNER JOIN ROOM AS r
+    ON sec.room_id = r.room_id
+WHERE sec.seat_limit > r.capacity;
+
+
+ข้อ 35 หาคู่นักศึกษาที่อยู่สาขาเดียวกัน โดยไม่ให้คู่ซ้ำ
+SELECT s1.first_name AS first_student,
+       s1.last_name AS first_student_last_name,
+       s2.first_name AS second_student,
+       s2.last_name AS second_student_last_name,
+       s1.dept_id
+FROM STUDENT AS s1
+INNER JOIN STUDENT AS s2
+    ON s1.dept_id = s2.dept_id
+   AND s1.student_id < s2.student_id;
+
+
+==============================
+ตอนที่ 3 ระดับยาก (ข้อ 36–50)
+==============================
+
+
+ข้อ 36 แสดงห้องเรียนที่มีความจุมากกว่าค่าเฉลี่ยของทุกห้อง
+SELECT room_id, building, capacity
+FROM ROOM
+WHERE capacity > (
+    SELECT AVG(capacity)
+    FROM ROOM
+);
+
+
+ข้อ 37 แสดงชื่อนักศึกษาที่เคยลงทะเบียนวิชา CS301 โดยใช้ IN แบบซ้อน
+SELECT first_name, last_name
+FROM STUDENT
+WHERE student_id IN (
+    SELECT student_id
+    FROM ENROLLMENT
+    WHERE section_id IN (
+        SELECT section_id
+        FROM SECTION
+        WHERE course_id = 'CS301'
+    )
+);
+
+
+ข้อ 38 แสดงนักศึกษาที่ไม่เคยลงทะเบียนเลย โดยใช้ NOT EXISTS
+SELECT s.student_id, s.first_name, s.last_name
+FROM STUDENT AS s
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM ENROLLMENT AS e
+    WHERE e.student_id = s.student_id
+);
+
+
+ข้อ 39 แสดงนักศึกษาที่เคยได้เกรด F อย่างน้อย 1 วิชา โดยใช้ EXISTS
+SELECT s.student_id, s.first_name, s.last_name
+FROM STUDENT AS s
+WHERE EXISTS (
+    SELECT 1
+    FROM ENROLLMENT AS e
+    WHERE e.student_id = s.student_id
+      AND e.grade = 'F'
+);
+
+
+ข้อ 40 แสดงนักศึกษาที่อายุน้อยที่สุดในแต่ละสาขา โดยใช้ Correlated subquery
+SELECT d.dept_name,
+       s.first_name,
+       s.last_name,
+       s.birth_date
+FROM STUDENT AS s
+INNER JOIN DEPARTMENT AS d
+    ON s.dept_id = d.dept_id
+WHERE s.birth_date = (
+    SELECT MAX(s2.birth_date)
+    FROM STUDENT AS s2
+    WHERE s2.dept_id = s.dept_id
+);
+
+
+ข้อ 41 แสดงตอนเรียนที่มีนักศึกษาลงทะเบียนมากที่สุด (กรณีเสมอแสดงทุกตอน)
+WITH section_counts AS (
+    SELECT sec.section_id,
+           COUNT(e.student_id) AS student_count
+    FROM SECTION AS sec
+    LEFT JOIN ENROLLMENT AS e
+        ON sec.section_id = e.section_id
+    GROUP BY sec.section_id
+)
+SELECT section_id, student_count
+FROM section_counts
+WHERE student_count = (
+    SELECT MAX(student_count)
+    FROM section_counts
+);
+
+
+ข้อ 42 แปลงเกรดเป็นแต้มด้วย CASE เฉพาะรายการที่มีเกรดของ section 4
+SELECT student_id,
+       section_id,
+       grade,
+       CASE grade
+           WHEN 'A'  THEN 4
+           WHEN 'B+' THEN 3.5
+           WHEN 'B'  THEN 3
+           WHEN 'C+' THEN 2.5
+           WHEN 'C'  THEN 2
+           WHEN 'D+' THEN 1.5
+           WHEN 'D'  THEN 1
+           WHEN 'F'  THEN 0
+       END AS grade_point
+FROM ENROLLMENT
+WHERE section_id = 4
+  AND grade IS NOT NULL;
+
+
+ข้อ 43 จัดกลุ่มห้องเรียนตามขนาด แล้วนับจำนวนห้องในแต่ละกลุ่ม
+SELECT
+    CASE
+        WHEN capacity < 35 THEN 'เล็ก'
+        WHEN capacity BETWEEN 35 AND 60 THEN 'กลาง'
+        ELSE 'ใหญ่'
+    END AS room_size,
+    COUNT(*) AS room_count
+FROM ROOM
+GROUP BY
+    CASE
+        WHEN capacity < 35 THEN 'เล็ก'
+        WHEN capacity BETWEEN 35 AND 60 THEN 'กลาง'
+        ELSE 'ใหญ่'
+    END;
+
+
+ข้อ 44 ใช้ CTE คำนวณ GPA ถ่วงด้วยหน่วยกิตของนักศึกษาแต่ละคน เฉพาะวิชาที่มีเกรด ปัด 2 ตำแหน่ง
+WITH grade_points AS (
+    SELECT e.student_id,
+           c.credits,
+           CASE e.grade
+               WHEN 'A'  THEN 4.0
+               WHEN 'B+' THEN 3.5
+               WHEN 'B'  THEN 3.0
+               WHEN 'C+' THEN 2.5
+               WHEN 'C'  THEN 2.0
+               WHEN 'D+' THEN 1.5
+               WHEN 'D'  THEN 1.0
+               WHEN 'F'  THEN 0.0
+           END AS grade_point
+    FROM ENROLLMENT AS e
+    INNER JOIN SECTION AS sec
+        ON e.section_id = sec.section_id
+    INNER JOIN COURSE AS c
+        ON sec.course_id = c.course_id
+    WHERE e.grade IS NOT NULL
+)
+SELECT student_id,
+       ROUND(SUM(grade_point * credits) / SUM(credits), 2) AS GPA
+FROM grade_points
+GROUP BY student_id
+ORDER BY GPA DESC;
+
+
+ข้อ 45 ใช้ CTE หาสาขาที่มีจำนวนนักศึกษามากกว่าค่าเฉลี่ยจำนวนนักศึกษาต่อสาขา
+WITH department_counts AS (
+    SELECT d.dept_id,
+           d.dept_name,
+           COUNT(s.student_id) AS student_count
+    FROM DEPARTMENT AS d
+    LEFT JOIN STUDENT AS s
+        ON d.dept_id = s.dept_id
+    GROUP BY d.dept_id, d.dept_name
+)
+SELECT dept_id, dept_name, student_count
+FROM department_counts
+WHERE student_count > (
+    SELECT AVG(student_count)
+    FROM department_counts
+);
+
+
+ข้อ 46 ใช้ RANK() จัดอันดับห้องเรียนตามความจุจากมากไปน้อย ภายในแต่ละอาคาร
+SELECT room_id,
+       building,
+       capacity,
+       RANK() OVER (
+           PARTITION BY building
+           ORDER BY capacity DESC
+       ) AS room_rank
+FROM ROOM;
+
+
+ข้อ 47 แสดงรายการลงทะเบียนของ section 2 และ 4 พร้อมจำนวนนักศึกษาทั้งหมดในตอนนั้น โดยใช้ COUNT OVER
+SELECT student_id,
+       section_id,
+       enroll_date,
+       grade,
+       COUNT(*) OVER (
+           PARTITION BY section_id
+       ) AS section_student_count
+FROM ENROLLMENT
+WHERE section_id IN (2, 4);
+
+
+ข้อ 48 ใช้ ROW_NUMBER() หารายการลงทะเบียนครั้งแรกของนักศึกษาแต่ละคน ตาม enroll_date
+WITH ranked_enrollments AS (
+    SELECT student_id,
+           section_id,
+           enroll_date,
+           grade,
+           ROW_NUMBER() OVER (
+               PARTITION BY student_id
+               ORDER BY enroll_date ASC, section_id ASC
+           ) AS row_num
+    FROM ENROLLMENT
+)
+SELECT student_id, section_id, enroll_date, grade
+FROM ranked_enrollments
+WHERE row_num = 1;
+
+
+ข้อ 49 แสดงรหัสนักศึกษาที่เรียนทั้งวิชา DS220 และ DS340 โดยใช้ INTERSECT
+SELECT e.student_id
+FROM ENROLLMENT AS e
+INNER JOIN SECTION AS sec
+    ON e.section_id = sec.section_id
+WHERE sec.course_id = 'DS220'
+
+INTERSECT
+
+SELECT e.student_id
+FROM ENROLLMENT AS e
+INNER JOIN SECTION AS sec
+    ON e.section_id = sec.section_id
+WHERE sec.course_id = 'DS340';
+
+
+ข้อ 50 สรุปผลรายวิชาที่เปิดในภาค 2568/1
+แสดงชื่อวิชา จำนวนผู้ลงทะเบียน จำนวนที่ได้ A อัตราการสอบผ่าน (%) และที่นั่งคงเหลือ
+เรียงตามอัตราการสอบผ่านจากน้อยไปมาก
+WITH course_results AS (
+    SELECT sec.section_id,
+           c.course_name,
+           sec.seat_limit,
+           COUNT(e.student_id) AS enrollment_count,
+           SUM(CASE WHEN e.grade = 'A' THEN 1 ELSE 0 END) AS grade_a_count,
+           SUM(CASE WHEN e.grade IS NOT NULL THEN 1 ELSE 0 END) AS graded_count,
+           SUM(CASE
+                   WHEN e.grade IS NOT NULL AND e.grade <> 'F' THEN 1
+                   ELSE 0
+               END) AS passed_count
+    FROM SECTION AS sec
+    INNER JOIN COURSE AS c
+        ON sec.course_id = c.course_id
+    LEFT JOIN ENROLLMENT AS e
+        ON sec.section_id = e.section_id
+    WHERE sec.semester = '2568/1'
+    GROUP BY sec.section_id, c.course_name, sec.seat_limit
+)
+SELECT course_name,
+       enrollment_count,
+       grade_a_count,
+       ROUND(
+           100.0 * passed_count / NULLIF(graded_count, 0),
+           1
+       ) AS pass_rate_percent,
+       seat_limit - enrollment_count AS remaining_seats
+FROM course_results
+ORDER BY pass_rate_percent ASC;
