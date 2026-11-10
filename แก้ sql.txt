@@ -1,0 +1,610 @@
+﻿============================================================
+ตอนที่ 1 DDL (ข้อ 1-20)
+============================================================
+
+
+-- ข้อ 1 ลบและสร้างฐานข้อมูล shopdb ใหม่ รองรับภาษาไทย
+DROP DATABASE IF EXISTS shopdb;
+CREATE DATABASE shopdb
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+USE shopdb;
+
+
+-- ข้อ 2 สร้างตาราง CATEGORY
+CREATE TABLE CATEGORY (
+    category_id INT AUTO_INCREMENT PRIMARY KEY,
+    category_name VARCHAR(50) NOT NULL UNIQUE
+);
+
+
+-- ข้อ 3 สร้างตาราง CUSTOMER
+CREATE TABLE CUSTOMER (
+    customer_id INT AUTO_INCREMENT PRIMARY KEY,
+    first_name VARCHAR(50) NOT NULL,
+    last_name VARCHAR(50) NOT NULL,
+    email VARCHAR(100) NOT NULL UNIQUE,
+    phone VARCHAR(15),
+    registered_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- ข้อ 4 สร้างตาราง PRODUCT พร้อม Foreign Key และ CHECK
+CREATE TABLE PRODUCT (
+    product_id INT AUTO_INCREMENT PRIMARY KEY,
+    product_name VARCHAR(100) NOT NULL,
+    category_id INT,
+    price DECIMAL(10,2) NOT NULL,
+    stock INT NOT NULL DEFAULT 0,
+    CONSTRAINT fk_product_category
+      FOREIGN KEY (category_id) REFERENCES CATEGORY(category_id),
+    CONSTRAINT chk_product_price CHECK (price > 0),
+    CONSTRAINT chk_product_stock CHECK (stock >= 0)
+);
+
+
+-- ข้อ 5 สร้างตาราง ORDERS
+CREATE TABLE ORDERS (
+    order_id INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT NOT NULL,
+    order_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    shipping_fee DECIMAL(8,2) NOT NULL DEFAULT 0,
+    CONSTRAINT fk_orders_customer
+      FOREIGN KEY (customer_id) REFERENCES CUSTOMER(customer_id),
+    CONSTRAINT chk_orders_status
+      CHECK (status IN ('pending','paid','shipped','delivered','cancelled'))
+);
+
+
+-- ข้อ 6 สร้างตาราง PROMOTION
+CREATE TABLE PROMOTION (
+    promo_code VARCHAR(20) PRIMARY KEY,
+    discount_percent INT NOT NULL,
+    valid_until DATE NOT NULL,
+    CONSTRAINT chk_promotion_discount
+      CHECK (discount_percent BETWEEN 1 AND 90)
+);
+
+
+-- ข้อ 7 สร้างตาราง ORDER_ITEM ใช้ Primary Key แบบผสม
+CREATE TABLE ORDER_ITEM (
+    order_id INT NOT NULL,
+    product_id INT NOT NULL,
+    quantity INT NOT NULL,
+    unit_price DECIMAL(10,2) NOT NULL,
+    PRIMARY KEY (order_id, product_id),
+    CONSTRAINT fk_order_item_order
+      FOREIGN KEY (order_id) REFERENCES ORDERS(order_id)
+      ON DELETE CASCADE,
+    CONSTRAINT fk_order_item_product
+      FOREIGN KEY (product_id) REFERENCES PRODUCT(product_id),
+    CONSTRAINT chk_order_item_quantity CHECK (quantity > 0)
+);
+
+
+-- ข้อ 8 สร้างตาราง PAYMENT ให้หนึ่งคำสั่งซื้อชำระได้ครั้งเดียว
+CREATE TABLE PAYMENT (
+    payment_id INT AUTO_INCREMENT PRIMARY KEY,
+    order_id INT NOT NULL UNIQUE,
+    method VARCHAR(20) NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    paid_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_payment_order
+      FOREIGN KEY (order_id) REFERENCES ORDERS(order_id),
+    CONSTRAINT chk_payment_method
+      CHECK (method IN ('credit_card','bank_transfer','promptpay','cod'))
+);
+
+
+-- ข้อ 9 เพิ่ม description ต่อจาก product_name
+ALTER TABLE PRODUCT
+ADD COLUMN description TEXT AFTER product_name;
+
+
+-- ข้อ 10 ขยาย phone เป็น 20 ตัวอักษร
+ALTER TABLE CUSTOMER
+MODIFY COLUMN phone VARCHAR(20);
+
+
+-- ข้อ 11 เพิ่ม CHECK ให้ shipping_fee ไม่ติดลบ
+ALTER TABLE ORDERS
+ADD CONSTRAINT chk_shipping_fee CHECK (shipping_fee >= 0);
+
+
+-- ข้อ 12 เพิ่ม promo_code และ Foreign Key ลบ Promotion แล้วให้เป็น NULL
+ALTER TABLE ORDERS
+ADD COLUMN promo_code VARCHAR(20) NULL,
+ADD CONSTRAINT fk_orders_promo
+  FOREIGN KEY (promo_code) REFERENCES PROMOTION(promo_code)
+  ON DELETE SET NULL;
+
+
+-- ข้อ 13 เพิ่ม UNIQUE constraint ชื่อ uq_product_name
+ALTER TABLE PRODUCT
+ADD CONSTRAINT uq_product_name UNIQUE (product_name);
+
+
+-- ข้อ 14 เพิ่ม province โดยมีค่าเริ่มต้นเป็นกรุงเทพมหานคร
+ALTER TABLE CUSTOMER
+ADD COLUMN province VARCHAR(50) DEFAULT 'กรุงเทพมหานคร';
+
+
+-- ข้อ 15 สร้างดัชนีสำหรับค้นประวัติคำสั่งซื้อของลูกค้า
+CREATE INDEX idx_orders_customer_date
+ON ORDERS (customer_id, order_date);
+
+
+-- ข้อ 16 สร้าง View สรุปคำสั่งซื้อ
+-- num_items ใช้ผลรวมจำนวนชิ้น (SUM quantity)
+CREATE VIEW v_order_summary AS
+SELECT
+    o.order_id,
+    o.order_date,
+    CONCAT(c.first_name, ' ', c.last_name) AS customer_name,
+    o.status,
+    COALESCE(SUM(oi.quantity), 0) AS num_items,
+    COALESCE(SUM(oi.quantity * oi.unit_price), 0) AS subtotal,
+    o.shipping_fee,
+    COALESCE(SUM(oi.quantity * oi.unit_price), 0) + o.shipping_fee AS total
+FROM ORDERS o
+JOIN CUSTOMER c ON c.customer_id = o.customer_id
+LEFT JOIN ORDER_ITEM oi ON oi.order_id = o.order_id
+GROUP BY
+    o.order_id, o.order_date, c.first_name, c.last_name,
+    o.status, o.shipping_fee;
+
+
+-- ข้อ 17 สร้าง PRODUCT_ARCHIVE โครงสร้างเหมือน PRODUCT และเพิ่ม archived_at
+CREATE TABLE PRODUCT_ARCHIVE LIKE PRODUCT;
+ALTER TABLE PRODUCT_ARCHIVE
+ADD COLUMN archived_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+
+-- ข้อ 18 เปลี่ยน FK ให้ลบหมวดแล้ว category_id เป็น NULL
+ALTER TABLE PRODUCT
+DROP FOREIGN KEY fk_product_category;
+ALTER TABLE PRODUCT
+ADD CONSTRAINT fk_product_category
+  FOREIGN KEY (category_id) REFERENCES CATEGORY(category_id)
+  ON DELETE SET NULL;
+
+
+-- ข้อ 19 แก้ View ไม่แสดงคำสั่งซื้อที่ยกเลิก
+CREATE OR REPLACE VIEW v_order_summary AS
+SELECT
+    o.order_id,
+    o.order_date,
+    CONCAT(c.first_name, ' ', c.last_name) AS customer_name,
+    o.status,
+    COALESCE(SUM(oi.quantity), 0) AS num_items,
+    COALESCE(SUM(oi.quantity * oi.unit_price), 0) AS subtotal,
+    o.shipping_fee,
+    COALESCE(SUM(oi.quantity * oi.unit_price), 0) + o.shipping_fee AS total
+FROM ORDERS o
+JOIN CUSTOMER c ON c.customer_id = o.customer_id
+LEFT JOIN ORDER_ITEM oi ON oi.order_id = o.order_id
+WHERE o.status <> 'cancelled'
+GROUP BY
+    o.order_id, o.order_date, c.first_name, c.last_name,
+    o.status, o.shipping_fee;
+
+
+-- ข้อ 20 สร้าง View สินค้าสต็อกต่ำ พร้อม WITH CHECK OPTION
+CREATE VIEW v_low_stock AS
+SELECT product_id, product_name, stock
+FROM PRODUCT
+WHERE stock < 10
+WITH CHECK OPTION;
+
+
+============================================================
+ตอนที่ 2 DML (ข้อ 21-40)
+============================================================
+USE shopdb;
+
+
+-- ข้อ 21 เพิ่มหมวดสินค้าใหม่ (ได้ category_id = 6 ตามข้อมูลตัวอย่าง)
+INSERT INTO CATEGORY (category_name)
+VALUES ('กีฬาและฟิตเนส');
+SELECT * FROM CATEGORY WHERE category_name = 'กีฬาและฟิตเนส';
+
+
+-- ข้อ 22 เพิ่มลูกค้าใหม่ ไม่ระบุ customer_id และ registered_at
+INSERT INTO CUSTOMER (first_name, last_name, email, phone, province)
+VALUES ('วรเชษฐ์', 'ทองคำ', 'worachet@mail.com', '0891234567', 'นครราชสีมา');
+SELECT * FROM CUSTOMER WHERE email = 'worachet@mail.com';
+
+
+-- ข้อ 23 เพิ่มสินค้า 3 รายการด้วย INSERT เดียว
+INSERT INTO PRODUCT (product_name, category_id, price, stock)
+VALUES
+('ดัมเบล 5 กก.', 6, 690.00, 30),
+('เสื่อโยคะ', 6, 450.00, 50),
+('ลูกฟุตบอล', 6, 590.00, 20);
+SELECT * FROM PRODUCT WHERE category_id = 6;
+
+
+-- ข้อ 24 ปรับสต็อกสมาร์ทวอทช์เป็น 20
+UPDATE PRODUCT
+SET stock = 20
+WHERE product_name = 'สมาร์ทวอทช์';
+SELECT product_id, product_name, stock
+FROM PRODUCT WHERE product_name = 'สมาร์ทวอทช์';
+
+
+-- ข้อ 25 ลบลูกค้าที่เพิ่มในข้อ 22 โดยอ้างอิงอีเมล
+DELETE FROM CUSTOMER
+WHERE email = 'worachet@mail.com';
+SELECT * FROM CUSTOMER WHERE email = 'worachet@mail.com';
+
+
+-- ข้อ 26 เพิ่มโค้ด PAYDAY25 ลด 25% หมดอายุ 25 ธันวาคม 2025
+INSERT INTO PROMOTION (promo_code, discount_percent, valid_until)
+VALUES ('PAYDAY25', 25, '2025-12-25');
+SELECT * FROM PROMOTION WHERE promo_code = 'PAYDAY25';
+
+
+-- ข้อ 27 ขึ้นราคาสินค้าหมวดอุปกรณ์อิเล็กทรอนิกส์ 10% ด้วย Subquery
+UPDATE PRODUCT
+SET price = price * 1.10
+WHERE category_id = (
+    SELECT category_id
+    FROM CATEGORY
+    WHERE category_name = 'อุปกรณ์อิเล็กทรอนิกส์'
+);
+SELECT p.product_id, p.product_name, p.price, c.category_name
+FROM PRODUCT p
+JOIN CATEGORY c ON c.category_id = p.category_id
+WHERE c.category_name = 'อุปกรณ์อิเล็กทรอนิกส์';
+
+
+-- ข้อ 28 เปลี่ยน pending ที่สั่งก่อน 1 ตุลาคม 2025 เป็น cancelled
+UPDATE ORDERS
+SET status = 'cancelled'
+WHERE status = 'pending'
+  AND order_date < '2025-10-01';
+SELECT order_id, status, order_date
+FROM ORDERS
+WHERE status = 'cancelled';
+
+
+-- ข้อ 29 ลูกค้ารหัส 8 สั่งซื้อครั้งแรก ค่าขนส่ง 50 บาท
+-- เพิ่มคำสั่งซื้อก่อน (ตามโจทย์จะได้ order_id = 11)
+INSERT INTO ORDERS (customer_id, shipping_fee, status)
+VALUES (8, 50.00, 'pending');
+
+-- เพิ่มรายการสินค้า โดยดึงราคาปัจจุบันจาก PRODUCT
+INSERT INTO ORDER_ITEM (order_id, product_id, quantity, unit_price)
+SELECT 11, product_id, 2, price
+FROM PRODUCT
+WHERE product_id = 1;
+
+INSERT INTO ORDER_ITEM (order_id, product_id, quantity, unit_price)
+SELECT 11, product_id, 1, price
+FROM PRODUCT
+WHERE product_id = 10;
+
+SELECT * FROM ORDERS WHERE order_id = 11;
+SELECT * FROM ORDER_ITEM WHERE order_id = 11;
+
+
+-- ข้อ 30 ใส่ NEWUSER10 ให้ pending ของลูกค้าที่สมัครเดือนตุลาคม 2025
+UPDATE ORDERS
+SET promo_code = 'NEWUSER10'
+WHERE status = 'pending'
+  AND customer_id IN (
+      SELECT customer_id
+      FROM CUSTOMER
+      WHERE registered_at >= '2025-10-01'
+        AND registered_at < '2025-11-01'
+  );
+SELECT order_id, customer_id, status, promo_code
+FROM ORDERS
+WHERE promo_code = 'NEWUSER10';
+
+
+-- ข้อ 31 เปลี่ยน paid ที่มีข้อมูล PAYMENT แล้วเป็น shipped
+UPDATE ORDERS o
+SET o.status = 'shipped'
+WHERE o.status = 'paid'
+  AND EXISTS (
+      SELECT 1
+      FROM PAYMENT p
+      WHERE p.order_id = o.order_id
+  );
+SELECT order_id, status FROM ORDERS WHERE status = 'shipped';
+
+
+-- ข้อ 32 ลบคำสั่งซื้อที่ cancelled
+DELETE FROM ORDERS
+WHERE status = 'cancelled';
+SELECT * FROM ORDERS WHERE status = 'cancelled';
+SELECT * FROM ORDER_ITEM;
+-- ORDER_ITEM ที่ผูกกับคำสั่งซื้อที่ถูกลบจะถูกลบตามอัตโนมัติ
+-- เพราะ FK fk_order_item_order กำหนด ON DELETE CASCADE
+
+
+-- ข้อ 33 ลดราคา 5% สินค้าที่ยังไม่เคยถูกสั่งซื้อและมีสต็อก
+UPDATE PRODUCT p
+SET p.price = p.price * 0.95
+WHERE p.stock > 0
+  AND NOT EXISTS (
+      SELECT 1
+      FROM ORDER_ITEM oi
+      WHERE oi.product_id = p.product_id
+  );
+SELECT p.product_id, p.product_name, p.price, p.stock
+FROM PRODUCT p
+WHERE p.stock > 0
+  AND NOT EXISTS (
+      SELECT 1 FROM ORDER_ITEM oi
+      WHERE oi.product_id = p.product_id
+  );
+
+
+-- ข้อ 34 ลบโค้ดส่วนลดที่หมดอายุก่อน 1 ตุลาคม 2025
+DELETE FROM PROMOTION
+WHERE valid_until < '2025-10-01';
+SELECT * FROM PROMOTION;
+
+
+-- ข้อ 35 ปรับค่าขนส่งของ pending หรือ paid โดย CASE + Correlated Subquery
+UPDATE ORDERS o
+SET shipping_fee = CASE
+    WHEN (
+        SELECT COALESCE(SUM(oi.quantity * oi.unit_price), 0)
+        FROM ORDER_ITEM oi
+        WHERE oi.order_id = o.order_id
+    ) >= 1000 THEN 0
+    ELSE 50
+END
+WHERE o.status IN ('pending', 'paid');
+SELECT
+    o.order_id, o.status, o.shipping_fee,
+    (SELECT COALESCE(SUM(oi.quantity * oi.unit_price), 0)
+     FROM ORDER_ITEM oi WHERE oi.order_id = o.order_id) AS subtotal
+FROM ORDERS o
+WHERE o.status IN ('pending', 'paid');
+
+
+-- ข้อ 36 ตัดสต็อกตามรายการในคำสั่งซื้อ 11 ด้วย UPDATE JOIN
+UPDATE PRODUCT p
+JOIN ORDER_ITEM oi ON oi.product_id = p.product_id
+SET p.stock = p.stock - oi.quantity
+WHERE oi.order_id = 11;
+SELECT p.product_id, p.product_name, p.stock
+FROM PRODUCT p
+JOIN ORDER_ITEM oi ON oi.product_id = p.product_id
+WHERE oi.order_id = 11;
+
+
+-- ข้อ 37 บันทึกการชำระเงิน order 11 ผ่าน promptpay แล้วเปลี่ยนเป็น paid
+-- คำนวณ amount = subtotal * (1 - ส่วนลด/100) + shipping_fee
+INSERT INTO PAYMENT (order_id, method, amount)
+SELECT
+    o.order_id,
+    'promptpay',
+    COALESCE(SUM(oi.quantity * oi.unit_price), 0)
+      * (1 - COALESCE(pr.discount_percent, 0) / 100)
+      + o.shipping_fee
+FROM ORDERS o
+LEFT JOIN ORDER_ITEM oi ON oi.order_id = o.order_id
+LEFT JOIN PROMOTION pr ON pr.promo_code = o.promo_code
+WHERE o.order_id = 11
+GROUP BY o.order_id, o.shipping_fee, pr.discount_percent;
+
+UPDATE ORDERS
+SET status = 'paid'
+WHERE order_id = 11;
+SELECT * FROM PAYMENT WHERE order_id = 11;
+SELECT * FROM ORDERS WHERE order_id = 11;
+
+
+-- ข้อ 38 ย้ายสินค้าสต็อก 0 และไม่เคยถูกสั่งซื้อไป PRODUCT_ARCHIVE
+INSERT INTO PRODUCT_ARCHIVE
+    (product_id, product_name, description, category_id, price, stock)
+SELECT
+    p.product_id, p.product_name, p.description,
+    p.category_id, p.price, p.stock
+FROM PRODUCT p
+WHERE p.stock = 0
+  AND NOT EXISTS (
+      SELECT 1 FROM ORDER_ITEM oi
+      WHERE oi.product_id = p.product_id
+  );
+
+DELETE FROM PRODUCT p
+WHERE p.stock = 0
+  AND NOT EXISTS (
+      SELECT 1 FROM ORDER_ITEM oi
+      WHERE oi.product_id = p.product_id
+  );
+SELECT * FROM PRODUCT_ARCHIVE;
+SELECT * FROM PRODUCT;
+
+
+-- ข้อ 39 ทดลองเติมสต็อกผ่าน View แล้วแก้ผ่านตารางจริง
+-- คำสั่งนี้จะไม่ผ่าน WITH CHECK OPTION เพราะ stock = 25 ไม่เข้าเงื่อนไข stock < 10
+-- UPDATE v_low_stock SET stock = 25 WHERE product_id = 3;
+-- คำสั่งที่ทำงานได้จริง: UPDATE ตาราง PRODUCT โดยตรง
+UPDATE PRODUCT
+SET stock = 25
+WHERE product_id = 3;
+SELECT product_id, product_name, stock
+FROM PRODUCT WHERE product_id = 3;
+
+
+-- ข้อ 40 ยกเลิกคำสั่งซื้อ 11 หลังชำระเงิน: คืนสต็อก ลบ PAYMENT เปลี่ยนสถานะ
+START TRANSACTION;
+
+UPDATE PRODUCT p
+JOIN ORDER_ITEM oi ON oi.product_id = p.product_id
+SET p.stock = p.stock + oi.quantity
+WHERE oi.order_id = 11;
+
+DELETE FROM PAYMENT
+WHERE order_id = 11;
+
+UPDATE ORDERS
+SET status = 'cancelled'
+WHERE order_id = 11;
+
+
+-- ตรวจสอบก่อนยืนยัน
+SELECT * FROM ORDERS WHERE order_id = 11;
+SELECT * FROM PAYMENT WHERE order_id = 11;
+SELECT p.product_id, p.product_name, p.stock
+FROM PRODUCT p
+JOIN ORDER_ITEM oi ON oi.product_id = p.product_id
+WHERE oi.order_id = 11;
+============================================================
+ตอนที่ 3 DCL (ข้อ 41-60)
+============================================================
+-- ข้อ 41 สร้างผู้ใช้ staff01 จาก localhost
+CREATE USER 'staff01'@'localhost' IDENTIFIED BY 'Staff@2568';
+
+
+-- ข้อ 42 ให้ staff01 อ่าน PRODUCT และ CATEGORY
+GRANT SELECT ON shopdb.PRODUCT TO 'staff01'@'localhost';
+GRANT SELECT ON shopdb.CATEGORY TO 'staff01'@'localhost';
+
+
+-- ข้อ 43 แสดงสิทธิ์ทั้งหมดของ staff01
+SHOW GRANTS FOR 'staff01'@'localhost';
+
+
+-- ข้อ 44 ให้ staff01 อ่าน PROMOTION
+GRANT SELECT ON shopdb.PROMOTION TO 'staff01'@'localhost';
+
+
+-- ข้อ 45 เปลี่ยนรหัสผ่าน staff01
+ALTER USER 'staff01'@'localhost'
+IDENTIFIED BY 'NewStaff@2568';
+
+
+-- ข้อ 46 สร้างผู้ใช้ intern01 จาก localhost
+CREATE USER 'intern01'@'localhost'
+IDENTIFIED BY 'Intern@2568';
+
+
+-- ข้อ 47 สร้าง sales01 จากทุกเครื่อง และให้ SELECT, INSERT, UPDATE
+CREATE USER 'sales01'@'%' IDENTIFIED BY 'Sales@2568';
+GRANT SELECT, INSERT, UPDATE
+ON shopdb.ORDERS TO 'sales01'@'%';
+GRANT SELECT, INSERT, UPDATE
+ON shopdb.ORDER_ITEM TO 'sales01'@'%';
+
+
+-- ข้อ 48 ให้ staff01 แก้ไขได้เฉพาะคอลัมน์ stock ของ PRODUCT
+GRANT UPDATE (stock)
+ON shopdb.PRODUCT TO 'staff01'@'localhost';
+
+
+-- ข้อ 49 สร้าง report01 และให้ดูเฉพาะ View v_order_summary
+CREATE USER 'report01'@'localhost'
+IDENTIFIED BY 'Report@2568';
+GRANT SELECT ON shopdb.v_order_summary
+TO 'report01'@'localhost';
+-- View นี้แสดงชื่อ-นามสกุล แต่ไม่มี email และ phone
+
+
+-- ข้อ 50 ถอน INSERT บน ORDERS ของ sales01 (SELECT/UPDATE ยังคงอยู่)
+REVOKE INSERT ON shopdb.ORDERS FROM 'sales01'@'%';
+SHOW GRANTS FOR 'sales01'@'%';
+
+
+-- ข้อ 51 สร้าง marketing01 และให้จัดการ PROMOTION ครบ
+CREATE USER 'marketing01'@'%'
+IDENTIFIED BY 'Mkt@2568';
+GRANT SELECT, INSERT, UPDATE, DELETE
+ON shopdb.PROMOTION TO 'marketing01'@'%';
+
+
+-- ข้อ 52 ให้ intern01 อ่านทุกตารางและ View ใน shopdb แต่แก้ไขไม่ได้
+GRANT SELECT ON shopdb.* TO 'intern01'@'localhost';
+
+
+-- ข้อ 53 ล็อกบัญชี intern01 โดยไม่ลบสิทธิ์ และคำสั่งปลดล็อก
+ALTER USER 'intern01'@'localhost' ACCOUNT LOCK;
+-- วันเริ่มงานใช้คำสั่งนี้:
+ALTER USER 'intern01'@'localhost' ACCOUNT UNLOCK;
+
+
+-- ข้อ 54 ให้ staff01 ดูและแก้ไข stock ผ่าน View v_low_stock
+GRANT SELECT ON shopdb.v_low_stock TO 'staff01'@'localhost';
+GRANT UPDATE (stock) ON shopdb.v_low_stock TO 'staff01'@'localhost';
+
+
+-- ข้อ 55 สร้าง Role shop_admin ให้สิทธิ์ทั้งหมดใน shopdb และมอบให้ admin01
+CREATE ROLE 'shop_admin';
+GRANT ALL PRIVILEGES ON shopdb.* TO 'shop_admin';
+
+CREATE USER 'admin01'@'localhost'
+IDENTIFIED BY 'Admin@2568';
+GRANT 'shop_admin' TO 'admin01'@'localhost';
+SET DEFAULT ROLE 'shop_admin' TO 'admin01'@'localhost';
+
+
+-- ข้อ 56 สร้าง manager01 ให้ SELECT ORDERS พร้อม GRANT OPTION
+CREATE USER 'manager01'@'localhost'
+IDENTIFIED BY 'Mgr@2568';
+
+GRANT SELECT ON shopdb.ORDERS
+TO 'manager01'@'localhost'
+WITH GRANT OPTION;
+
+-- ให้ manager01 เป็นผู้มอบสิทธิ์ SELECT ORDERS ให้ marketing01
+-- คำสั่งนี้ต้องเชื่อมต่อ/รันในฐานะ manager01 หลังได้รับสิทธิ์แล้ว
+-- GRANT SELECT ON shopdb.ORDERS TO 'marketing01'@'%';
+
+-- ผู้ดูแลระบบถอนเฉพาะสิทธิ์การส่งต่อ แต่ manager01 ยัง SELECT ได้
+REVOKE GRANT OPTION FOR SELECT ON shopdb.ORDERS
+FROM 'manager01'@'localhost';
+SHOW GRANTS FOR 'manager01'@'localhost';
+
+
+-- ข้อ 57 จำกัด report01 ไม่เกิน 100 queries/ชั่วโมง และพร้อมกันไม่เกิน 2 connections
+ALTER USER 'report01'@'localhost'
+WITH MAX_QUERIES_PER_HOUR 100
+     MAX_USER_CONNECTIONS 2;
+
+
+-- ข้อ 58 ให้รหัสผ่าน sales01 หมดอายุทุก 90 วัน
+ALTER USER 'sales01'@'%'
+PASSWORD EXPIRE INTERVAL 90 DAY;
+
+
+-- ข้อ 59 สร้าง Role 2 กลุ่มและมอบให้ผู้ใช้
+
+-- ฝ่ายบริการลูกค้า: อ่าน CUSTOMER, ORDERS, ORDER_ITEM
+-- และแก้ไขได้เฉพาะ status ของ ORDERS
+CREATE ROLE 'cs_role';
+GRANT SELECT ON shopdb.CUSTOMER TO 'cs_role';
+GRANT SELECT ON shopdb.ORDERS TO 'cs_role';
+GRANT UPDATE (status) ON shopdb.ORDERS TO 'cs_role';
+GRANT SELECT ON shopdb.ORDER_ITEM TO 'cs_role';
+GRANT 'cs_role' TO 'sales01'@'%';
+SET DEFAULT ROLE 'cs_role' TO 'sales01'@'%';
+
+-- ฝ่ายคลังสินค้า: อ่าน PRODUCT และแก้ไขเฉพาะ stock
+CREATE ROLE 'warehouse_role';
+GRANT SELECT ON shopdb.PRODUCT TO 'warehouse_role';
+GRANT UPDATE (stock) ON shopdb.PRODUCT TO 'warehouse_role';
+GRANT 'warehouse_role' TO 'staff01'@'localhost';
+SET DEFAULT ROLE 'warehouse_role' TO 'staff01'@'localhost';
+
+
+-- ข้อ 60 staff01 ลาออก: ถอนสิทธิ์ทั้งหมดรวม Role ตรวจสอบ แล้วลบบัญชี
+-- ถอน Role ที่ได้รับ
+REVOKE 'warehouse_role' FROM 'staff01'@'localhost';
+
+-- ถอนสิทธิ์และสิทธิ์ส่งต่อทั้งหมด
+REVOKE ALL PRIVILEGES, GRANT OPTION
+FROM 'staff01'@'localhost';
+
+-- ตรวจสอบสิทธิ์ที่เหลือก่อนลบบัญชี
+SHOW GRANTS FOR 'staff01'@'localhost';
+
+-- ลบบัญชีผู้ใช้
+DROP USER 'staff01'@'localhost';
